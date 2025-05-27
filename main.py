@@ -9,6 +9,33 @@ from reporter import export_html_report
 from loguru import logger
 from tqdm import tqdm
 import sys
+import logging
+
+def configure_logging(log_level: str = "INFO"):
+    """Configure logging level for the application.
+    
+    Args:
+        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    """
+    # Remove default logger
+    logger.remove()
+    
+    # Add logger with specified level
+    logger.add(
+        sys.stderr,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+        level=log_level.upper(),
+        colorize=True
+    )
+    
+    # Also log to file with more details
+    logger.add(
+        "opensearch_monitor.log",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+        level=log_level.upper(),
+        rotation="1 day",
+        retention="7 days"
+    )
 
 def run_monitors(host, port, region, access_key, secret_key, domain=None, username=None, password=None, use_ssl=True, logz_api_token=None):
     # Define monitoring stages
@@ -95,19 +122,64 @@ def run_monitors(host, port, region, access_key, secret_key, domain=None, userna
             print(f"\n✓ {stages[6]} - Completed")
         
         # Stage 8: Logz.io Logs (if API token provided)
-        if logz_api_token and cluster_name:
+        if logz_api_token:
             pbar.set_description(stages[7])
-            from logz_client import LogzClient
-            logz_client = LogzClient(logz_api_token)
-            logz_analysis = logz_client.analyze_cluster_logs(cluster_name)
-            if "error" not in logz_analysis:
+            try:
+                if not cluster_name:
+                    logger.warning("Skipping Logz.io analysis: Cluster name not available")
+                else:
+                    from logz_client import LogzClient
+                    logz_client = LogzClient(logz_api_token)
+                    logz_analysis = logz_client.analyze_cluster_logs(cluster_name)
+                    
+                    if logz_analysis is None:
+                        logger.warning("No Logz.io analysis data received")
+                        results["Logz.io Analysis"] = {
+                            "slow_queries": [],
+                            "parsing_exceptions": [],
+                            "summary": {
+                                "total_logs": 0,
+                                "slow_queries_count": 0,
+                                "parsing_exceptions_count": 0
+                            }
+                        }
+                    elif "error" in logz_analysis:
+                        logger.error(f"Error in Logz.io analysis: {logz_analysis['error']}")
+                        results["Logz.io Analysis"] = {
+                            "slow_queries": [],
+                            "parsing_exceptions": [],
+                            "summary": {
+                                "total_logs": 0,
+                                "slow_queries_count": 0,
+                                "parsing_exceptions_count": 0,
+                                "error": logz_analysis["error"]
+                            }
+                        }
+                    else:
+                        results["Logz.io Analysis"] = {
+                            "slow_queries": logz_analysis.get("slow_queries", []),
+                            "parsing_exceptions": logz_analysis.get("parsing_exceptions", []),
+                            "summary": logz_analysis.get("summary", {
+                                "total_logs": 0,
+                                "slow_queries_count": 0,
+                                "parsing_exceptions_count": 0
+                            })
+                        }
+            except Exception as e:
+                logger.error(f"Error during Logz.io analysis: {str(e)}")
                 results["Logz.io Analysis"] = {
-                    "slow_queries": logz_analysis.get("slow_queries", []),
-                    "parsing_exceptions": logz_analysis.get("parsing_exceptions", []),
-                    "summary": logz_analysis.get("summary", {})
+                    "slow_queries": [],
+                    "parsing_exceptions": [],
+                    "summary": {
+                        "total_logs": 0,
+                        "slow_queries_count": 0,
+                        "parsing_exceptions_count": 0,
+                        "error": str(e)
+                    }
                 }
-            pbar.update(1)
-            print(f"\n✓ {stages[7]} - Completed")
+            finally:
+                pbar.update(1)
+                print(f"\n✓ {stages[7]} - Completed")
         
         # Stage 9: Generate Report
         pbar.set_description(stages[-1])
@@ -123,12 +195,17 @@ def run_monitors(host, port, region, access_key, secret_key, domain=None, userna
         print("\n")  # Add a newline after the progress bar
 
 
-def main(host, port, region, access_key, secret_key, domain=None, username=None, password=None, use_ssl=True, logz_api_token=None):
+def main(host, port, region, access_key, secret_key, domain=None, username=None, password=None, use_ssl=True, logz_api_token=None, log_level="INFO"):
     print("OpenSearch Monitor started")
     try:
+        # Configure logging first
+        configure_logging(log_level)
+        logger.info("Starting OpenSearch Monitor with log level: {}", log_level)
+        
         run_monitors(host, port, region, access_key, secret_key, domain, username, password, use_ssl, logz_api_token)
         print("\nReport generated: opensearch_report.html")
     except Exception as e:
+        logger.error(f"Error during monitoring: {str(e)}")
         print(f"\nError: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
@@ -145,6 +222,12 @@ if __name__ == "__main__":
     parser.add_argument('--password', help='OpenSearch password (optional)')
     parser.add_argument('--no-ssl', dest='use_ssl', action='store_false', help='Disable SSL (default: enabled)')
     parser.add_argument('--logz-api-token', help='Logz.io API token (optional)')
+    parser.add_argument('--log-level', 
+                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                       default='INFO',
+                       help='Set the logging level (default: INFO)')
     parser.set_defaults(use_ssl=True)
     args = parser.parse_args()
-    main(args.host, args.port, args.region, args.access_key, args.secret_key, args.domain, args.username, args.password, args.use_ssl, args.logz_api_token) 
+    main(args.host, args.port, args.region, args.access_key, args.secret_key, 
+         args.domain, args.username, args.password, args.use_ssl, args.logz_api_token,
+         args.log_level) 
