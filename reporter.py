@@ -419,10 +419,14 @@ def export_html_report(results: Dict[str, Any], filename: str = "opensearch_repo
             html.append("<tr><th>Metric</th><th>Value</th></tr>")
             html.append(f"<tr><td>Total Logs Analyzed</td><td>{summary.get('total_logs', 0)}</td></tr>")
             html.append(f"<tr><td>Slow Queries Found</td><td>{summary.get('slow_queries_count', 0)}</td></tr>")
+            html.append(f"<tr><td>Slow Indexing Operations Found</td><td>{summary.get('slow_indexing_count', 0)}</td></tr>")
             html.append(f"<tr><td>Parsing Exceptions Found</td><td>{summary.get('parsing_exceptions_count', 0)}</td></tr>")
             if summary.get('slowest_query_time', 0) > 0:
                 html.append(f"<tr><td>Slowest Query Time</td><td>{summary.get('slowest_query_time', 0)} ms</td></tr>")
                 html.append(f"<tr><td>Average Query Time</td><td>{summary.get('average_query_time', 0):.2f} ms</td></tr>")
+            if summary.get('slowest_indexing_time', 0) > 0:
+                html.append(f"<tr><td>Slowest Indexing Time</td><td>{summary.get('slowest_indexing_time', 0)} ms</td></tr>")
+                html.append(f"<tr><td>Average Indexing Time</td><td>{summary.get('average_indexing_time', 0):.2f} ms</td></tr>")
             html.append("</table>")
             html.append("</div>")
 
@@ -432,13 +436,32 @@ def export_html_report(results: Dict[str, Any], filename: str = "opensearch_repo
                 html.append("<div class='slow-queries'>")
                 html.append("<h4>Slow Queries</h4>")
                 html.append("<table>")
-                html.append("<tr><th>Timestamp</th><th>Duration (ms)</th><th>Source</th><th>Message</th></tr>")
+                html.append("<tr><th>Timestamp</th><th>Duration (ms)</th><th>Source</th><th>Index</th><th>Query</th></tr>")
                 for query in slow_queries:
                     html.append("<tr>")
                     html.append(f"<td>{query.get('timestamp', 'N/A')}</td>")
                     html.append(f"<td>{query.get('query_time', 0)}</td>")
                     html.append(f"<td>{query.get('source', 'N/A')}</td>")
-                    html.append(f"<td><pre>{query.get('message', 'N/A')}</pre></td>")
+                    html.append(f"<td>{query.get('index', 'N/A')}</td>")
+                    html.append(f"<td><pre>{query.get('query', 'N/A')}</pre></td>")
+                    html.append("</tr>")
+                html.append("</table>")
+                html.append("</div>")
+
+            # Display slow indexing operations
+            slow_indexing = data.get("slow_indexing", [])
+            if slow_indexing:
+                html.append("<div class='slow-indexing'>")
+                html.append("<h4>Slow Indexing Operations</h4>")
+                html.append("<table>")
+                html.append("<tr><th>Timestamp</th><th>Duration (ms)</th><th>Source</th><th>Index</th><th>Message</th></tr>")
+                for indexing in slow_indexing:
+                    html.append("<tr>")
+                    html.append(f"<td>{indexing.get('timestamp', 'N/A')}</td>")
+                    html.append(f"<td>{indexing.get('indexing_time', 0)}</td>")
+                    html.append(f"<td>{indexing.get('source', 'N/A')}</td>")
+                    html.append(f"<td>{indexing.get('index', 'N/A')}</td>")
+                    html.append(f"<td><pre>{indexing.get('message', 'N/A')}</pre></td>")
                     html.append("</tr>")
                 html.append("</table>")
                 html.append("</div>")

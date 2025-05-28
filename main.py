@@ -130,7 +130,13 @@ def run_monitors(host, port, region, access_key, secret_key, domain=None, userna
                 else:
                     from logz_client import LogzClient
                     logz_client = LogzClient(logz_api_token)
-                    logz_analysis = logz_client.analyze_cluster_logs(cluster_name)
+                    # Add default time range of 1 hour for analysis
+                    time_range = "1h"  # Default to last hour
+                    logz_analysis = logz_client.analyze_cluster_logs(
+                        cluster_name=cluster_name,
+                        time_range=time_range,
+                        size=1000  # Increased size to get more logs
+                    )
                     
                     if logz_analysis is None:
                         logger.warning("No Logz.io analysis data received")
